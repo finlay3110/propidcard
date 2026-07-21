@@ -341,7 +341,7 @@
     return Promise.resolve(null);
   }
 
-  function drawCardFront(doc, CX, CY, codeImgData, imgB64){
+  function drawCardFront(doc, CX, CY, codeImgData, imgB64, cardData){
     const CARD_W = 3.370, CARD_H = 2.125;
     const NAVY = hexToRgb('#1B2A5E');
     const NAVY_DARK = hexToRgb('#0B1230');
@@ -374,7 +374,7 @@
     doc.restoreGraphicsState();
 
     // ---- header band ----
-    const clearanceVal = watchSelect.value || 'EMERALD';
+    const clearanceVal = cardData.watch || 'EMERALD';
     const clearanceHex = CLEARANCE_COLORS[clearanceVal] || CLEARANCE_COLORS.EMERALD;
     if(clearanceVal === 'GRAVIUM'){
       doc.addImage('data:image/png;base64,'+imgB64.gravium, 'PNG', CX, CY, CARD_W, HEADER_H);
@@ -417,10 +417,9 @@
     // ---- photo box (UK passport ratio) ----
     const photoW = 0.23*CARD_W, photoH = photoW*(45/35);
     const photoX = CX+0.11, photoY = CY+HEADER_H+0.08;
-    if(photoBox.style.backgroundImage && photoBox.style.backgroundImage.includes('data:image')){
-      const url = photoBox.style.backgroundImage.slice(5,-2);
-      try{ doc.addImage(url, 'JPEG', photoX, photoY, photoW, photoH); }
-      catch(e){ try{ doc.addImage(url, 'PNG', photoX, photoY, photoW, photoH); }catch(e2){} }
+    if(cardData.photo){
+      try{ doc.addImage(cardData.photo, 'JPEG', photoX, photoY, photoW, photoH); }
+      catch(e){ try{ doc.addImage(cardData.photo, 'PNG', photoX, photoY, photoW, photoH); }catch(e2){} }
     } else {
       doc.setDrawColor(...NAVY);
       doc.setLineDashPattern([0.02,0.02], 0);
@@ -436,11 +435,11 @@
 
     // ---- barcode / QR ----
     const codeBoxY = photoY+photoH+0.03;
-    const codeBoxH = CY+CARD_H-FOOTER_H-codeBoxY - (codeMode==='barcode' ? 0.13 : 0);
+    const codeBoxH = CY+CARD_H-FOOTER_H-codeBoxY - (cardData.codeMode==='barcode' ? 0.13 : 0);
     if(codeImgData){
       let cw = photoW, ch = codeBoxH;
       const ratio = codeImgData.w/codeImgData.h;
-      if(codeMode === 'qr'){
+      if(cardData.codeMode === 'qr'){
         cw = Math.min(photoW, codeBoxH);
         ch = cw;
       } else {
@@ -449,11 +448,11 @@
       }
       doc.addImage(codeImgData.url, 'PNG', photoX+(photoW-cw)/2, codeBoxY+(codeBoxH-ch)/2, cw, ch);
     }
-    if(codeMode === 'barcode'){
+    if(cardData.codeMode === 'barcode'){
       doc.setFont('Exo2','normal');
       doc.setFontSize(7);
       doc.setTextColor(...INK);
-      const idVal = fields.id.value.trim() || defaults.id;
+      const idVal = cardData.id || defaults.id;
       doc.text(idVal, photoX, CY+CARD_H-FOOTER_H-0.06);
       doc.setDrawColor(...NAVY_DARK);
       doc.setLineWidth(0.01);
@@ -469,7 +468,7 @@
     doc.setFont('Exo2ExtraBold','normal');
     let nameFontSize = 15;
     doc.setFontSize(nameFontSize);
-    const nameVal = (fields.name.value.trim() || defaults.name).toUpperCase();
+    const nameVal = (cardData.name || defaults.name).toUpperCase();
     let nameW = doc.getTextWidth(nameVal);
     while(nameW > colW && nameFontSize > 8){
       nameFontSize -= 0.5;
@@ -477,8 +476,7 @@
       nameW = doc.getTextWidth(nameVal);
     }
 
-    let pronounsVal = pronounsSelect.value;
-    if(pronounsVal === '__other__') pronounsVal = pronounsOther.value.trim();
+    const pronounsVal = cardData.pronouns;
     const pronounsText = pronounsVal ? '('+pronounsVal.toUpperCase()+')' : '';
     let pronounsFontSize = 8.5;
     let pronounsW = 0;
@@ -518,7 +516,7 @@
     doc.setFont('Exo2','normal');
     doc.setFontSize(9);
     doc.setTextColor(...INK);
-    doc.text(rankSelect.value || 'RANK', colX, rowY);
+    doc.text(cardData.rank || 'RANK', colX, rowY);
     doc.setDrawColor(...NAVY_DARK);
     doc.setLineWidth(0.012);
     doc.line(colX, rowY+0.028, colX+colW, rowY+0.028);
@@ -528,24 +526,20 @@
     rowY += 0.19;
 
     // ship
-    let shipVal = shipSelect.value;
-    if(shipVal === '__other__') shipVal = shipOther.value.trim();
     doc.setFont('Exo2','normal');
     doc.setFontSize(9);
     doc.setTextColor(...INK);
-    doc.text((shipVal || 'SHIP').toUpperCase(), colX, rowY);
+    doc.text((cardData.ship || 'SHIP').toUpperCase(), colX, rowY);
     doc.setDrawColor(...NAVY_DARK);
     doc.setLineWidth(0.012);
     doc.line(colX, rowY+0.028, colX+colW, rowY+0.028);
     rowY += 0.17;
 
     // division
-    let divisionVal = divisionSelect.value;
-    if(divisionVal === '__other__') divisionVal = divisionOther.value.trim();
     doc.setFont('Exo2SemiBoldItalic','normal');
     doc.setFontSize(8.5);
     doc.setTextColor(...ORANGE);
-    doc.text((divisionVal || 'DIVISION').toUpperCase(), colX, rowY);
+    doc.text((cardData.division || 'DIVISION').toUpperCase(), colX, rowY);
     doc.setDrawColor(...NAVY_DARK);
     doc.setLineWidth(0.012);
     doc.line(colX, rowY+0.028, colX+colW, rowY+0.028);
@@ -563,7 +557,7 @@
     doc.setFont('OrbitronBold','normal');
     doc.setFontSize(9);
     doc.setTextColor(255,255,255);
-    doc.text((fields.task.value.trim() || defaults.task).toUpperCase(), CX+0.11, CY+CARD_H-FOOTER_H/2+0.03);
+    doc.text((cardData.task || defaults.task).toUpperCase(), CX+0.11, CY+CARD_H-FOOTER_H/2+0.03);
 
     doc.restoreGraphicsState();
   }
@@ -638,10 +632,69 @@
     });
   }
 
+  // generalized barcode/QR renderer for arbitrary (not-currently-displayed) card
+  // data - used for batch printing, where each card needs its own code image
+  function renderCodeImageFor(idValue, mode){
+    return new Promise((resolve)=>{
+      const value = idValue || 'UCN-000-0000';
+      const holder = document.createElement('div');
+      holder.style.position = 'absolute';
+      holder.style.left = '-9999px';
+      document.body.appendChild(holder);
+      const cleanup = (result)=>{ document.body.removeChild(holder); resolve(result); };
+      if(mode === 'qr'){
+        if(typeof QRCode === 'undefined'){ cleanup(null); return; }
+        try{
+          new QRCode(holder, {
+            text: value, width: 300, height: 300,
+            colorDark: '#0B1230', colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M,
+          });
+        }catch(e){ cleanup(null); return; }
+        setTimeout(()=>{ elementToPngDataUrl(holder).then(cleanup); }, 50);
+      } else {
+        if(typeof JsBarcode === 'undefined'){ cleanup(null); return; }
+        const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+        holder.appendChild(svg);
+        try{
+          JsBarcode(svg, value, {
+            format:'CODE128', displayValue:false, height:46, margin:0,
+            background:'transparent', lineColor:'#0B1230',
+          });
+        }catch(e){ cleanup(null); return; }
+        elementToPngDataUrl(holder).then(cleanup);
+      }
+    });
+  }
+
+  function getCurrentCardData(){
+    let pronouns = pronounsSelect.value;
+    if(pronouns === '__other__') pronouns = pronounsOther.value.trim();
+    let ship = shipSelect.value;
+    if(ship === '__other__') ship = shipOther.value.trim();
+    let division = divisionSelect.value;
+    if(division === '__other__') division = divisionOther.value.trim();
+    const bg = photoBox.style.backgroundImage;
+    const photo = (bg && bg.includes('data:image')) ? bg.slice(5,-2) : null;
+    return {
+      name: fields.name.value.trim(),
+      pronouns,
+      rank: rankSelect.value,
+      ship,
+      division,
+      watch: watchSelect.value,
+      task: fields.task.value.trim(),
+      id: fields.id.value.trim(),
+      codeMode,
+      photo,
+    };
+  }
+
   async function buildPdf(mode, codeImgData, backQrData){
     const { jsPDF } = window.jspdf;
     const CARD_W = 3.370, CARD_H = 2.125;
     const GUTTER = 0.18;
+    const cardData = getCurrentCardData();
 
     const imgB64 = {
       logoWhite: await loadImageB64('logoWhite'),
@@ -653,7 +706,7 @@
     if(mode === 'card'){
       const doc = new jsPDF({unit:'in', format:[CARD_W, CARD_H], orientation:'l'});
       await registerFonts(doc);
-      drawCardFront(doc, 0, 0, codeImgData, imgB64);
+      drawCardFront(doc, 0, 0, codeImgData, imgB64, cardData);
       doc.addPage([CARD_W, CARD_H], 'l');
       drawCardBack(doc, 0, 0, backQrData, imgB64);
       return doc;
@@ -671,7 +724,7 @@
     doc.setLineWidth(0.01);
     doc.rect(MARGIN_LEFT, MARGIN_TOP, CARD_W + GUTTER*2, CARD_H + GUTTER*2, 'D');
     doc.setLineDashPattern([], 0);
-    drawCardFront(doc, CX, CY, codeImgData, imgB64);
+    drawCardFront(doc, CX, CY, codeImgData, imgB64, cardData);
 
     // back page: mirrored horizontally so it lines up when duplex-printed (flip on long edge)
     doc.addPage('a4', 'p');
@@ -685,6 +738,182 @@
 
     return doc;
   }
+
+  // ============================================================
+  // Export / import / batch printing
+  // ============================================================
+  const BATCH_FILE_VERSION = 1;
+
+  function exportCard(){
+    const data = getCurrentCardData();
+    const payload = { ucnCardVersion: BATCH_FILE_VERSION, ...data };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (data.name || 'ucn-card').toLowerCase().replace(/[^a-z0-9]+/g,'-') + '.ucncard.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const batchQueue = [];
+
+  function renderBatchList(){
+    const listEl = $('batchList');
+    const actionsEl = $('batchActions');
+    listEl.innerHTML = '';
+    batchQueue.forEach((card, i)=>{
+      const item = document.createElement('div');
+      item.className = 'batch-item';
+      const thumb = document.createElement('div');
+      thumb.className = 'batch-item-thumb';
+      if(card.photo) thumb.style.backgroundImage = `url(${card.photo})`;
+      const name = document.createElement('span');
+      name.className = 'batch-item-name';
+      name.textContent = card.name || 'Unnamed';
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'batch-item-remove';
+      removeBtn.type = 'button';
+      removeBtn.innerHTML = '&times;';
+      removeBtn.title = 'Remove from batch';
+      removeBtn.addEventListener('click', ()=>{
+        batchQueue.splice(i, 1);
+        renderBatchList();
+      });
+      item.appendChild(thumb);
+      item.appendChild(name);
+      item.appendChild(removeBtn);
+      listEl.appendChild(item);
+    });
+    if(batchQueue.length){
+      const countEl = document.createElement('p');
+      countEl.className = 'batch-count';
+      countEl.textContent = `${batchQueue.length} card${batchQueue.length===1?'':'s'} queued (${Math.ceil(batchQueue.length/10)} sheet${Math.ceil(batchQueue.length/10)===1?'':'s'} of paper, double-sided)`;
+      listEl.appendChild(countEl);
+    }
+    actionsEl.style.display = batchQueue.length ? 'block' : 'none';
+  }
+
+  function importCardFiles(fileList){
+    Array.from(fileList).forEach(file=>{
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const data = JSON.parse(reader.result);
+          batchQueue.push({
+            name: data.name || '', pronouns: data.pronouns || '', rank: data.rank || '',
+            ship: data.ship || '', division: data.division || '', watch: data.watch || 'EMERALD',
+            task: data.task || '', id: data.id || '', codeMode: data.codeMode || 'barcode',
+            photo: data.photo || null,
+          });
+          renderBatchList();
+        }catch(e){
+          alert(`Couldn't read "${file.name}" — is it a card file exported from this tool?`);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  async function buildBatchPdf(cards){
+    const { jsPDF } = window.jspdf;
+    const CARD_W = 3.370, CARD_H = 2.125;
+    const cols = 2, rows = 5, perPage = cols*rows;
+    const gapX = 0.2, gapY = 0.15;
+
+    const imgB64 = {
+      logoWhite: await loadImageB64('logoWhite'),
+      logoNavy: await loadImageB64('logoNavy'),
+      gravium: await loadImageB64('gravium'),
+      obsidian: await loadImageB64('obsidian'),
+    };
+    const backQrData = await generateQrDataUrl('https://toolportal.netlify.app', 300);
+
+    const doc = new jsPDF({unit:'in', format:'a4', orientation:'p'});
+    await registerFonts(doc);
+    const A4_W = doc.internal.pageSize.getWidth();
+    const A4_H = doc.internal.pageSize.getHeight();
+    const totalW = cols*CARD_W + (cols-1)*gapX;
+    const totalH = rows*CARD_H + (rows-1)*gapY;
+    const marginX = (A4_W - totalW)/2;
+    const marginY = (A4_H - totalH)/2;
+
+    function cutMark(x, y){
+      doc.setDrawColor(154,160,172);
+      doc.setLineDashPattern([0.03, 0.03], 0);
+      doc.setLineWidth(0.008);
+      doc.rect(x-0.04, y-0.04, CARD_W+0.08, CARD_H+0.08, 'D');
+      doc.setLineDashPattern([], 0);
+    }
+
+    // pre-render each card's own barcode/QR image once
+    const codeImages = [];
+    for(const card of cards){
+      codeImages.push(await renderCodeImageFor(card.id, card.codeMode));
+    }
+
+    const pageCount = Math.max(1, Math.ceil(cards.length / perPage));
+    for(let p = 0; p < pageCount; p++){
+      if(p > 0) doc.addPage('a4', 'p');
+      const pageCards = cards.slice(p*perPage, (p+1)*perPage);
+      pageCards.forEach((card, i)=>{
+        const col = i % cols, row = Math.floor(i / cols);
+        const x = marginX + col*(CARD_W+gapX);
+        const y = marginY + row*(CARD_H+gapY);
+        cutMark(x, y);
+        drawCardFront(doc, x, y, codeImages[p*perPage+i], imgB64, card);
+      });
+
+      // back page: same grid, mirrored horizontally per-card so each one lines
+      // up correctly when duplex-printed (flip on long edge)
+      doc.addPage('a4', 'p');
+      pageCards.forEach((card, i)=>{
+        const col = i % cols, row = Math.floor(i / cols);
+        const mirroredCol = cols - 1 - col;
+        const x = marginX + mirroredCol*(CARD_W+gapX);
+        const y = marginY + row*(CARD_H+gapY);
+        cutMark(x, y);
+        drawCardBack(doc, x, y, backQrData, imgB64);
+      });
+    }
+
+    return doc;
+  }
+
+  async function downloadBatchPdf(){
+    const btn = $('downloadBatchBtn');
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Generating…';
+    btn.disabled = true;
+    try{
+      const doc = await buildBatchPdf(batchQueue);
+      doc.save(`ucn-crew-batch-${batchQueue.length}-cards.pdf`);
+    }catch(e){
+      console.error(e);
+      alert('Could not generate the batch PDF. Please check your internet connection and try again.');
+    }finally{
+      btn.textContent = originalLabel;
+      btn.disabled = false;
+    }
+  }
+
+  $('exportCardBtn').addEventListener('click', exportCard);
+  $('importCardBtn').addEventListener('click', ()=> $('importCardInput').click());
+  $('importCardInput').addEventListener('change', e=>{
+    if(e.target.files.length) importCardFiles(e.target.files);
+    e.target.value = '';
+  });
+  $('addToBatchBtn').addEventListener('click', ()=>{
+    batchQueue.push(getCurrentCardData());
+    renderBatchList();
+  });
+  $('downloadBatchBtn').addEventListener('click', downloadBatchPdf);
+  $('clearBatchBtn').addEventListener('click', ()=>{
+    if(batchQueue.length && confirm('Clear all ' + batchQueue.length + ' queued card(s)?')){
+      batchQueue.length = 0;
+      renderBatchList();
+    }
+  });
 
 
   async function downloadCardPdf(mode, btn){
@@ -711,5 +940,4 @@
 
   $('printA4Btn').addEventListener('click', ()=> downloadCardPdf('a4', $('printA4Btn')));
   $('printCardBtn').addEventListener('click', ()=> downloadCardPdf('card', $('printCardBtn')));
-window.__fitDebug = fitNameRow;
 })();
