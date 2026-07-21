@@ -2,6 +2,47 @@
 (function(){
   const $ = id => document.getElementById(id);
 
+  // ---- pronouns (optional, shown next to the name) ----
+  // declared early since fitNameRow/syncText('name') below depend on it
+  const pronounsSelect = $('f-pronouns');
+  const pronounsOther = $('f-pronouns-other');
+  const pronounsPreview = $('p-pronouns');
+  const namePreviewEl = $('p-name');
+  const nameRow = namePreviewEl.closest('.info-row.name');
+
+  function fitNameRow(){
+    namePreviewEl.style.fontSize = '';
+    pronounsPreview.style.fontSize = '';
+    const available = nameRow.clientWidth;
+    if(!available) return;
+    let nameSize = 23, pronounSize = 13;
+    let guard = 0;
+    while(nameRow.scrollWidth > available && nameSize > 13 && guard++ < 20){
+      nameSize -= 1;
+      namePreviewEl.style.fontSize = nameSize + 'px';
+    }
+    guard = 0;
+    while(pronounsPreview.textContent && nameRow.scrollWidth > available && pronounSize > 8 && guard++ < 20){
+      pronounSize -= 1;
+      pronounsPreview.style.fontSize = pronounSize + 'px';
+    }
+  }
+
+  function syncPronouns(){
+    let val;
+    if(pronounsSelect.value === '__other__'){
+      pronounsOther.style.display = 'block';
+      val = pronounsOther.value.trim();
+    } else {
+      pronounsOther.style.display = 'none';
+      val = pronounsSelect.value;
+    }
+    pronounsPreview.textContent = val ? `(${val.toUpperCase()})` : '';
+    fitNameRow();
+  }
+  pronounsSelect.addEventListener('change', syncPronouns);
+  pronounsOther.addEventListener('input', syncPronouns);
+
   const fields = {
     name: $('f-name'),
     task: $('f-task'), id: $('f-id'),
@@ -18,6 +59,7 @@
   function syncText(key){
     const val = fields[key].value.trim();
     preview[key].textContent = val ? val.toUpperCase() : defaults[key];
+    if(key === 'name') fitNameRow();
   }
 
   Object.keys(fields).forEach(key=>{
@@ -36,24 +78,6 @@
   }
   rankSelect.addEventListener('change', syncRank);
   syncRank();
-
-  // ---- pronouns (optional, shown next to the name) ----
-  const pronounsSelect = $('f-pronouns');
-  const pronounsOther = $('f-pronouns-other');
-  const pronounsPreview = $('p-pronouns');
-  function syncPronouns(){
-    let val;
-    if(pronounsSelect.value === '__other__'){
-      pronounsOther.style.display = 'block';
-      val = pronounsOther.value.trim();
-    } else {
-      pronounsOther.style.display = 'none';
-      val = pronounsSelect.value;
-    }
-    pronounsPreview.textContent = val ? `(${val.toUpperCase()})` : '';
-  }
-  pronounsSelect.addEventListener('change', syncPronouns);
-  pronounsOther.addEventListener('input', syncPronouns);
   syncPronouns();
 
   // ---- division (dropdown, with "Other" revealing free text) ----
@@ -392,7 +416,7 @@
 
     // ---- photo box (UK passport ratio) ----
     const photoW = 0.23*CARD_W, photoH = photoW*(45/35);
-    const photoX = CX+0.11, photoY = CY+HEADER_H+0.11;
+    const photoX = CX+0.11, photoY = CY+HEADER_H+0.08;
     if(photoBox.style.backgroundImage && photoBox.style.backgroundImage.includes('data:image')){
       const url = photoBox.style.backgroundImage.slice(5,-2);
       try{ doc.addImage(url, 'JPEG', photoX, photoY, photoW, photoH); }
@@ -411,8 +435,8 @@
     }
 
     // ---- barcode / QR ----
-    const codeBoxY = photoY+photoH+0.05;
-    const codeBoxH = CY+CARD_H-FOOTER_H-0.08-codeBoxY - (codeMode==='barcode' ? 0.14 : 0);
+    const codeBoxY = photoY+photoH+0.03;
+    const codeBoxH = CY+CARD_H-FOOTER_H-codeBoxY - (codeMode==='barcode' ? 0.13 : 0);
     if(codeImgData){
       let cw = photoW, ch = codeBoxH;
       const ratio = codeImgData.w/codeImgData.h;
@@ -441,20 +465,49 @@
     const colW = CX+CARD_W-0.11-colX;
     let rowY = CY+HEADER_H+0.24;
 
-    // name (+ pronouns)
+    // name (+ pronouns), auto-shrinking to fit the available column width
     doc.setFont('Exo2ExtraBold','normal');
-    doc.setFontSize(15);
-    doc.setTextColor(...INK);
+    let nameFontSize = 15;
+    doc.setFontSize(nameFontSize);
     const nameVal = (fields.name.value.trim() || defaults.name).toUpperCase();
-    doc.text(nameVal, colX, rowY);
-    const nameW = doc.getTextWidth(nameVal);
+    let nameW = doc.getTextWidth(nameVal);
+    while(nameW > colW && nameFontSize > 8){
+      nameFontSize -= 0.5;
+      doc.setFontSize(nameFontSize);
+      nameW = doc.getTextWidth(nameVal);
+    }
+
     let pronounsVal = pronounsSelect.value;
     if(pronounsVal === '__other__') pronounsVal = pronounsOther.value.trim();
-    if(pronounsVal){
+    const pronounsText = pronounsVal ? '('+pronounsVal.toUpperCase()+')' : '';
+    let pronounsFontSize = 8.5;
+    let pronounsW = 0;
+    if(pronounsText){
       doc.setFont('Exo2','normal');
-      doc.setFontSize(8.5);
+      doc.setFontSize(pronounsFontSize);
+      pronounsW = doc.getTextWidth(pronounsText);
+      while(nameW + 0.06 + pronounsW > colW && pronounsFontSize > 5){
+        pronounsFontSize -= 0.5;
+        doc.setFontSize(pronounsFontSize);
+        pronounsW = doc.getTextWidth(pronounsText);
+      }
+      while(nameW + 0.06 + pronounsW > colW && nameFontSize > 8){
+        nameFontSize -= 0.5;
+        doc.setFont('Exo2ExtraBold','normal');
+        doc.setFontSize(nameFontSize);
+        nameW = doc.getTextWidth(nameVal);
+      }
+    }
+
+    doc.setFont('Exo2ExtraBold','normal');
+    doc.setFontSize(nameFontSize);
+    doc.setTextColor(...INK);
+    doc.text(nameVal, colX, rowY);
+    if(pronounsText){
+      doc.setFont('Exo2','normal');
+      doc.setFontSize(pronounsFontSize);
       doc.setTextColor(...MUTED);
-      doc.text('('+pronounsVal.toUpperCase()+')', colX+nameW+0.06, rowY);
+      doc.text(pronounsText, colX+nameW+0.06, rowY);
     }
     doc.setDrawColor(...NAVY_DARK);
     doc.setLineWidth(0.014);
@@ -658,4 +711,5 @@
 
   $('printA4Btn').addEventListener('click', ()=> downloadCardPdf('a4', $('printA4Btn')));
   $('printCardBtn').addEventListener('click', ()=> downloadCardPdf('card', $('printCardBtn')));
+window.__fitDebug = fitNameRow;
 })();
