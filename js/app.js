@@ -146,6 +146,19 @@
   const chooseBtn = $('choosePhoto');
   const clearBtn = $('clearPhoto');
 
+  // held here rather than read back out of style.backgroundImage, which each
+  // browser is free to re-serialize however it likes
+  let photoDataUrl = null;
+
+  // only ever a local data: URI - never a remote address that would make the
+  // page fetch something off-device
+  function isLocalImageDataUrl(value){
+    return typeof value === 'string' && /^data:image\/[a-z0-9.+-]+[;,]/i.test(value);
+  }
+  function cssUrl(dataUrl){
+    return 'url("' + dataUrl.replace(/["\\]/g, encodeURIComponent) + '")';
+  }
+
   chooseBtn.addEventListener('click', ()=> photoInput.click());
   photoInput.addEventListener('change', e=>{
     const file = e.target.files[0];
@@ -153,9 +166,11 @@
     const reader = new FileReader();
     reader.onload = ev=>{
       const url = ev.target.result;
-      photoBox.style.backgroundImage = `url(${url})`;
+      if(!isLocalImageDataUrl(url)) return;
+      photoDataUrl = url;
+      photoBox.style.backgroundImage = cssUrl(url);
       photoBox.textContent = '';
-      photoThumb.style.backgroundImage = `url(${url})`;
+      photoThumb.style.backgroundImage = cssUrl(url);
       photoThumb.textContent = '';
       clearBtn.style.display = 'inline';
     };
@@ -163,6 +178,7 @@
   });
   clearBtn.addEventListener('click', ()=>{
     photoInput.value = '';
+    photoDataUrl = null;
     photoBox.style.backgroundImage = '';
     photoBox.textContent = 'CLICK TO ADD PHOTO';
     photoThumb.style.backgroundImage = '';
@@ -178,11 +194,18 @@
   const codeBox = codeRender.closest('.code-box');
   const qrLengthHint = $('qr-length-hint');
 
+  const BARCODE_ID_MAXLENGTH = 20;
   barcodeBtn.addEventListener('click', ()=>{
     codeMode = 'barcode';
     barcodeBtn.classList.add('active');
     qrBtn.classList.remove('active');
-    fields.id.setAttribute('maxlength', '20');
+    fields.id.setAttribute('maxlength', String(BARCODE_ID_MAXLENGTH));
+    // maxlength won't trim a value that's already too long - anything typed
+    // while QR mode had the limit lifted has to be cut back by hand
+    if(fields.id.value.length > BARCODE_ID_MAXLENGTH){
+      fields.id.value = fields.id.value.slice(0, BARCODE_ID_MAXLENGTH);
+      syncText('id');
+    }
     qrLengthHint.style.display = 'none';
     renderCode();
   });
@@ -248,6 +271,13 @@
   // Fonts and images are fetched from their real files and base64-encoded at
   // runtime (only once, then cached) - this only works when served over
   // http(s), not opened directly as a file:// path.
+
+  // Card geometry in inches (CR-80). HEADER_FRAC/FOOTER_FRAC are mirrored in
+  // css/style.css as .card-body's top/bottom percentages - keep the two in step.
+  const CARD_W = 3.370, CARD_H = 2.125;
+  const HEADER_FRAC = 0.222, FOOTER_FRAC = 0.098;
+  const PHOTO_RATIO = 35/45; // UK passport photo
+
   function arrayBufferToBase64(buffer){
     let binary = '';
     const bytes = new Uint8Array(buffer);
@@ -279,24 +309,25 @@
     return fetchBase64(IMG_PATHS[key]);
   }
 
-  let fontsRegistered = false;
+  const FONT_LIST = [
+    ['fonts/Exo2-Regular.ttf', 'Exo2-Regular.ttf', 'Exo2'],
+    ['fonts/Exo2-SemiBold.ttf', 'Exo2-SemiBold.ttf', 'Exo2SemiBold'],
+    ['fonts/Exo2-ExtraBold.ttf', 'Exo2-ExtraBold.ttf', 'Exo2ExtraBold'],
+    ['fonts/Exo2-SemiBoldItalic.ttf', 'Exo2-SemiBoldItalic.ttf', 'Exo2SemiBoldItalic'],
+    ['fonts/Exo2-BoldItalic.ttf', 'Exo2-BoldItalic.ttf', 'Exo2BoldItalic'],
+    ['fonts/Orbitron-Bold.ttf', 'Orbitron-Bold.ttf', 'OrbitronBold'],
+    ['fonts/Orbitron-Black.ttf', 'Orbitron-Black.ttf', 'OrbitronBlack'],
+  ];
+  // jsPDF keeps its virtual filesystem on the document instance, so every new
+  // doc needs its own registration pass - a "have we done this yet" flag would
+  // leave the second and later PDFs silently falling back to Helvetica. The
+  // expensive part (fetch + base64) is cached in assetCache, so this is cheap.
   async function registerFonts(doc){
-    if(fontsRegistered) return;
-    const fontList = [
-      ['fonts/Exo2-Regular.ttf', 'Exo2-Regular.ttf', 'Exo2'],
-      ['fonts/Exo2-SemiBold.ttf', 'Exo2-SemiBold.ttf', 'Exo2SemiBold'],
-      ['fonts/Exo2-ExtraBold.ttf', 'Exo2-ExtraBold.ttf', 'Exo2ExtraBold'],
-      ['fonts/Exo2-SemiBoldItalic.ttf', 'Exo2-SemiBoldItalic.ttf', 'Exo2SemiBoldItalic'],
-      ['fonts/Exo2-BoldItalic.ttf', 'Exo2-BoldItalic.ttf', 'Exo2BoldItalic'],
-      ['fonts/Orbitron-Bold.ttf', 'Orbitron-Bold.ttf', 'OrbitronBold'],
-      ['fonts/Orbitron-Black.ttf', 'Orbitron-Black.ttf', 'OrbitronBlack'],
-    ];
-    for(const [path, vfsName, family] of fontList){
+    for(const [path, vfsName, family] of FONT_LIST){
       const b64 = await fetchBase64(path);
       doc.addFileToVFS(vfsName, b64);
       doc.addFont(vfsName, family, 'normal');
     }
-    fontsRegistered = true;
   }
 
   function hexToRgb(hex){
@@ -341,8 +372,45 @@
     return Promise.resolve(null);
   }
 
+  // The preview shows photos with CSS `center/cover` - cropped, aspect kept -
+  // but jsPDF's addImage stretches whatever it's given to fill the box. Crop to
+  // the card's photo ratio first so the print matches what's on screen.
+  const photoCropCache = new Map();
+  function cropPhotoToRatio(dataUrl, ratio){
+    if(!dataUrl) return Promise.resolve(null);
+    const cached = photoCropCache.get(dataUrl);
+    if(cached) return Promise.resolve(cached);
+    return new Promise(resolve=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const srcW = img.naturalWidth, srcH = img.naturalHeight;
+        if(!srcW || !srcH){ resolve(dataUrl); return; }
+        let sw = srcW, sh = srcH, sx = 0, sy = 0;
+        if(srcW/srcH > ratio){ sw = srcH*ratio; sx = (srcW-sw)/2; }
+        else { sh = srcW/ratio; sy = (srcH-sh)/2; }
+        const out = document.createElement('canvas');
+        out.width = Math.max(1, Math.round(Math.min(sw, 700)));
+        out.height = Math.max(1, Math.round(out.width/ratio));
+        const ctx = out.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, out.width, out.height);
+        let result;
+        try{ result = out.toDataURL('image/jpeg', 0.92); }
+        catch(e){ result = dataUrl; }
+        photoCropCache.set(dataUrl, result);
+        resolve(result);
+      };
+      img.onerror = ()=> resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
+  async function withCroppedPhoto(card){
+    return Object.assign({}, card, {photo: await cropPhotoToRatio(card.photo, PHOTO_RATIO)});
+  }
+
   function drawCardFront(doc, CX, CY, codeImgData, imgB64, cardData){
-    const CARD_W = 3.370, CARD_H = 2.125;
     const NAVY = hexToRgb('#1B2A5E');
     const NAVY_DARK = hexToRgb('#0B1230');
     const ORANGE = hexToRgb('#DD7A2B');
@@ -364,8 +432,8 @@
     doc.discardPath();
 
     // ---- watermark (faint logo, centered in white body area) ----
-    const HEADER_H = 0.222 * CARD_H;
-    const FOOTER_H = 0.098 * CARD_H;
+    const HEADER_H = HEADER_FRAC * CARD_H;
+    const FOOTER_H = FOOTER_FRAC * CARD_H;
     const wmSize = (CARD_H - HEADER_H - FOOTER_H) * 0.85;
     doc.saveGraphicsState();
     doc.setGState(new doc.GState({opacity: 0.06}));
@@ -415,7 +483,9 @@
     doc.line(clearRightX-labelW, CY+HEADER_H*0.68, clearRightX, CY+HEADER_H*0.68);
 
     // ---- photo box (UK passport ratio) ----
-    const photoW = 0.23*CARD_W, photoH = photoW*(45/35);
+    // cardData.photo is pre-cropped to PHOTO_RATIO by the callers, so filling
+    // the box here can't distort it.
+    const photoW = 0.23*CARD_W, photoH = photoW/PHOTO_RATIO;
     const photoX = CX+0.11, photoY = CY+HEADER_H+0.08;
     if(cardData.photo){
       try{ doc.addImage(cardData.photo, 'JPEG', photoX, photoY, photoW, photoH); }
@@ -450,9 +520,16 @@
     }
     if(cardData.codeMode === 'barcode'){
       doc.setFont('Exo2','normal');
-      doc.setFontSize(7);
       doc.setTextColor(...INK);
       const idVal = cardData.id || defaults.id;
+      // shrink to stay inside the photo column instead of running into the
+      // info column next to it
+      let idFontSize = 7;
+      doc.setFontSize(idFontSize);
+      while(doc.getTextWidth(idVal) > photoW && idFontSize > 4){
+        idFontSize -= 0.25;
+        doc.setFontSize(idFontSize);
+      }
       doc.text(idVal, photoX, CY+CARD_H-FOOTER_H-0.06);
       doc.setDrawColor(...NAVY_DARK);
       doc.setLineWidth(0.01);
@@ -563,7 +640,6 @@
   }
 
   function drawCardBack(doc, CX, CY, backQrData, imgB64){
-    const CARD_W = 3.370, CARD_H = 2.125;
     const NAVY = hexToRgb('#1B2A5E');
     const MUTED = hexToRgb('#8890A6');
 
@@ -674,8 +750,6 @@
     if(ship === '__other__') ship = shipOther.value.trim();
     let division = divisionSelect.value;
     if(division === '__other__') division = divisionOther.value.trim();
-    const bg = photoBox.style.backgroundImage;
-    const photo = (bg && bg.includes('data:image')) ? bg.slice(5,-2) : null;
     return {
       name: fields.name.value.trim(),
       pronouns,
@@ -686,15 +760,14 @@
       task: fields.task.value.trim(),
       id: fields.id.value.trim(),
       codeMode,
-      photo,
+      photo: photoDataUrl,
     };
   }
 
   async function buildPdf(mode, codeImgData, backQrData){
     const { jsPDF } = window.jspdf;
-    const CARD_W = 3.370, CARD_H = 2.125;
     const GUTTER = 0.18;
-    const cardData = getCurrentCardData();
+    const cardData = await withCroppedPhoto(getCurrentCardData());
 
     const imgB64 = {
       logoWhite: await loadImageB64('logoWhite'),
@@ -753,7 +826,8 @@
     a.href = url;
     a.download = (data.name || 'ucn-card').toLowerCase().replace(/[^a-z0-9]+/g,'-') + '.ucncard.json';
     a.click();
-    URL.revokeObjectURL(url);
+    // revoking in the same tick can cancel the download before it starts
+    setTimeout(()=> URL.revokeObjectURL(url), 1000);
   }
 
   const batchQueue = [];
@@ -767,7 +841,7 @@
       item.className = 'batch-item';
       const thumb = document.createElement('div');
       thumb.className = 'batch-item-thumb';
-      if(card.photo) thumb.style.backgroundImage = `url(${card.photo})`;
+      if(card.photo) thumb.style.backgroundImage = cssUrl(card.photo);
       const name = document.createElement('span');
       name.className = 'batch-item-name';
       name.textContent = card.name || 'Unnamed';
@@ -800,11 +874,21 @@
       reader.onload = ()=>{
         try{
           const data = JSON.parse(reader.result);
+          if(!data || typeof data !== 'object' || typeof data.ucnCardVersion !== 'number'){
+            throw new Error('not a card file');
+          }
+          if(data.ucnCardVersion > BATCH_FILE_VERSION){
+            alert(`"${file.name}" was made by a newer version of this tool. Some details may be missing.`);
+          }
+          const str = v => typeof v === 'string' ? v : '';
           batchQueue.push({
-            name: data.name || '', pronouns: data.pronouns || '', rank: data.rank || '',
-            ship: data.ship || '', division: data.division || '', watch: data.watch || 'EMERALD',
-            task: data.task || '', id: data.id || '', codeMode: data.codeMode || 'barcode',
-            photo: data.photo || null,
+            name: str(data.name), pronouns: str(data.pronouns), rank: str(data.rank),
+            ship: str(data.ship), division: str(data.division), watch: str(data.watch) || 'EMERALD',
+            task: str(data.task), id: str(data.id),
+            codeMode: data.codeMode === 'qr' ? 'qr' : 'barcode',
+            // card files come from other people - a remote URL here would have
+            // the page fetch it, so only accept an inline image
+            photo: isLocalImageDataUrl(data.photo) ? data.photo : null,
           });
           renderBatchList();
         }catch(e){
@@ -815,9 +899,8 @@
     });
   }
 
-  async function buildBatchPdf(cards){
+  async function buildBatchPdf(rawCards){
     const { jsPDF } = window.jspdf;
-    const CARD_W = 3.370, CARD_H = 2.125;
     const cols = 2, rows = 5, perPage = cols*rows;
     const gapX = 0.2, gapY = 0.15;
 
@@ -846,9 +929,11 @@
       doc.setLineDashPattern([], 0);
     }
 
-    // pre-render each card's own barcode/QR image once
+    // pre-render each card's own barcode/QR image, and crop its photo, once
+    const cards = [];
     const codeImages = [];
-    for(const card of cards){
+    for(const card of rawCards){
+      cards.push(await withCroppedPhoto(card));
       codeImages.push(await renderCodeImageFor(card.id, card.codeMode));
     }
 

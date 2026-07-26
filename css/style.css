@@ -418,6 +418,7 @@
 
   .card-body{
     position:absolute;
+    /* mirrors HEADER_FRAC / FOOTER_FRAC in js/app.js - keep the two in step */
     top:22.2%;bottom:9.8%;left:0;right:0;
     display:flex;
     padding:3.6% 3.4% 0;
@@ -577,41 +578,5 @@
     color:#5C6E90;
   }
 
-  #printOnly{ display:none; }
-
-  /* ---------- print ---------- */
-  @media print{
-    html, body{
-      margin:0;
-      padding:0;
-      background:#fff;
-    }
-    .app{ display:none !important; }
-    .page-disclaimer{ display:none !important; }
-    .page-credit{ display:none !important; }
-    #printOnly{
-      display:block;
-    }
-    .print-cut-frame{
-      position:relative;
-      border:1px dashed #9AA0AC;
-      padding:0.18in;
-      width:3.370in;
-      height:2.125in;
-      margin:0.4in auto 0;
-      box-sizing:content-box;
-    }
-    #printCard{
-      position:absolute;
-      top:0.18in;
-      left:0.18in;
-      width:520px;
-      height:calc(520px * 212.5 / 337);
-      aspect-ratio:unset;
-      box-shadow:none;
-      border-width:1.6pt;
-      margin:0;
-      transform:scale(0.6221538461538462);
-      transform-origin:top left;
-    }
-  }
+  /* No print stylesheet by design: printing goes through the generated PDF,
+     not the browser's print-to-PDF. See "Standing conventions" in README.md. */
