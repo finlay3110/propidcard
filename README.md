@@ -15,7 +15,7 @@ Live at **[toolportal.netlify.app](https://toolportal.netlify.app)**
   group, ID number — and see the card update live as you type.
 - Upload your own photo (passport-style crop), or leave the placeholder box.
 - Choose a barcode or a QR code for the ID number.
-- Four clearance levels, each with its own colour treatment: Emerald,
+- Five clearance levels, each with its own colour treatment: Emerald, Amber,
   Scarlet, Obsidian (subtle sparkle), Gravium (violet gradient + shimmer).
 - **Download PDF (A4, cut lines)** — a full A4 sheet with the card at true
   credit-card size (CR-80, 3.370″ × 2.125″) and dashed cut marks around it.
