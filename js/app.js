@@ -118,8 +118,12 @@
   syncDivision();
 
   // ---- clearance level (fixed dropdown, recolors the header band) ----
+  // The band carries a white label in both the preview and the PDF, so these
+  // have to stay dark enough to read against it - a true amber (#FFBF00) only
+  // manages 1.65:1 and is unusable here.
   const CLEARANCE_COLORS = {
     EMERALD:  '#1F8A55',
+    AMBER:    '#A8620E',
     SCARLET:  '#C41E3A',
     OBSIDIAN: '#1C1C1E',
     GRAVIUM:  '#6B3FA0',
